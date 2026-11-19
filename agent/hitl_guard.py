@@ -32,7 +32,8 @@ def read_query(path, sql, *, preview=False):
         nonlocal reads_comments
         allowed = action in (sqlite3.SQLITE_SELECT, sqlite3.SQLITE_RECURSIVE)
         if action == sqlite3.SQLITE_READ:
-            allowed = db == "main" and table in analytics.tables
+            # SQLite omits the database name on a column-free table read (COUNT(*)).
+            allowed = table in analytics.tables and (db == "main" or (db is None and column == ""))
             reads_comments |= table == "dim_reviews" and column == "review_comment"
         if action == sqlite3.SQLITE_FUNCTION:
             allowed = column.lower() in SAFE_FUNCTIONS
