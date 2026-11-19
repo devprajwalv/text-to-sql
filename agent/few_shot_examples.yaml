@@ -1,0 +1,11 @@
+- question: How much freight was charged for delivered orders?
+  sql: SELECT SUM(freight_cents) / 100.0 AS freight_brl FROM fact_orders WHERE order_status = 'delivered'
+- question: Show monthly buyer counts.
+  sql: >
+    SELECT substr(f.created_at, 1, 7) AS month, COUNT(DISTINCT u.unique_customer_id) AS buyers
+    FROM fact_orders AS f JOIN dim_users AS u ON u.user_id = f.user_id
+    GROUP BY month ORDER BY month
+- question: Which orders contained at least four items?
+  sql: >
+    SELECT order_id, COUNT(*) AS items FROM fact_orders WHERE item_seq > 0
+    GROUP BY order_id HAVING COUNT(*) >= 4 ORDER BY items DESC, order_id
