@@ -1,24 +1,22 @@
 import { TestBed } from '@angular/core/testing';
+import { Api } from './api';
 import { App } from './app';
 
-describe('App', () => {
-  beforeEach(async () => {
-    await TestBed.configureTestingModule({
+describe('Query Studio', () => {
+  it('opens the workspace and switches to the schema returned by the API', async () => {
+    TestBed.configureTestingModule({
       imports: [App],
-    })
-      .compileComponents();
-  });
-
-  it('should create the app', () => {
-    const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance;
-    expect(app).toBeTruthy();
-  });
-
-  it('should render title', async () => {
+      providers: [{ provide: Api, useValue: {
+        health: async () => ({ dataset_loaded: true, retrieval_mode: 'full_schema', key_configured: false }),
+        schema: async () => [{ table_name: 'fact_orders', columns: [], joins: [], description: 'One row per item' }],
+      } }],
+    });
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
-    const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('Hello, frontend');
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.querySelector('h1')?.textContent).toBe('Query workspace');
+    host.querySelector<HTMLButtonElement>('.outline')!.click();
+    await fixture.whenStable();
+    expect(host.querySelector('schema-explorer')?.textContent).toContain('fact_orders');
   });
 });

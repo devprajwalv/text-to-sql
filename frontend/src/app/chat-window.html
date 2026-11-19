@@ -1,0 +1,36 @@
+<h1>Query workspace</h1>
+<p class="intro">Ask a question about the Olist marketplace and explore the SQL behind the answer.</p>
+<form class="composer" (submit)="submit($event)">
+  <label for="question"><span class="prompt-symbol" aria-hidden="true">›_</span> Your question</label>
+  <textarea #questionBox id="question" maxlength="2000" rows="3"
+    placeholder="What would you like to know about orders, products, or customers?"
+    [value]="text()" (input)="text.set($any($event.target).value)" (keydown.control.enter)="submit($event)"></textarea>
+  <div class="composer-actions"><label class="check"><input type="checkbox" [checked]="review()" (change)="review.set($any($event.target).checked)"> Review SQL first</label>
+    <button class="primary" [disabled]="!text().trim() || busy() || pending()" type="submit"><span class="play" aria-hidden="true"></span>{{ busy() ? 'Working…' : 'Run query' }}</button>
+  </div>
+</form>
+@if (error() && !pending()) { <p class="notice" role="alert">{{ error() }}</p> }
+@if (!answers().length) {
+  <div class="section-heading"><h2>Suggested questions</h2><span class="rule"></span></div>
+  <div class="suggestions">
+    @for (item of suggestions; track item.type) {
+      <button class="suggestion" type="button" (click)="choose(item.question)">
+        <span class="category"><i class="tile-icon {{ item.icon }}" aria-hidden="true"></i>{{ item.type }}</span>
+        <span class="example-text">{{ item.question }}</span>
+      </button>
+    }
+  </div>
+} @else {
+  <div class="section-heading"><h2>Query history</h2><span class="rule"></span></div>
+  @for (answer of answers(); track answer.request_id) {
+    <article class="answer">
+      <div class="answer-head"><h3>{{ answer.question }}</h3><span class="status">{{ answer.status }}</span></div>
+      @if (answer.message) { <p role="status">{{ answer.message }}</p> }
+      @if (answer.sql) { <sql-display [sql]="answer.sql" /> }
+      @if (answer.status === 'completed') { <results-table [answer]="answer" /> }
+      <small>{{ answer.latency_ms }} ms · {{ answer.retrieval_mode === 'chroma' ? 'Chroma retrieval' : (answer.retrieval_mode === 'full_schema' ? 'Full schema' : 'Retrieval unavailable') }}</small>
+      @if (answer.relevant_tables.length) { <details class="context"><summary>Schema used in prompt</summary>{{ answer.relevant_tables.join(', ') }}</details> }
+    </article>
+  }
+}
+@if (pending(); as answer) { <approval-modal [answer]="answer" [busy]="busy()" [error]="error()" (decision)="decide($event)" /> }
