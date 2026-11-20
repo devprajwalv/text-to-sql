@@ -98,6 +98,13 @@ th { background: #f1f5f2; }
 summary { cursor: pointer; }
 dialog { color: inherit; border: 1px solid var(--line); border-radius: 16px; padding: 25px; max-width: min(580px, 92vw); }
 dialog::backdrop { background: #102c2590; }
+.intent-picker { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 0 0 14px; margin: 0 0 14px; border: 0; border-bottom: 1px solid var(--line); }
+.intent-picker legend { font-size: .875rem; color: var(--muted); margin-bottom: 7px; }
+.intent-picker input { accent-color: var(--forest); }
+.bindings { background: #f2f6f3; white-space: pre-wrap; overflow-wrap: anywhere; }
+.change-rows { margin: 12px 0 18px; table-layout: fixed; overflow-wrap: anywhere; }
+.change-rows caption { text-align: left; margin-bottom: 6px; font-weight: 600; }
+.change-rows .modified { background: #edf5e3; font-weight: 600; }
 dialog footer { justify-content: flex-end; }
 .notice { background: #fff1d7; border-radius: 8px; margin-top: 15px; }
 .search { display: grid; gap: 6px; margin-bottom: 16px; color: var(--muted); }

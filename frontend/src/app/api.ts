@@ -9,6 +9,18 @@ export interface Table {
   joins: string[];
 }
 
+export type ChangeRow = Record<string, string | number | null>;
+
+export interface ChangePreview {
+  operation: 'INSERT' | 'UPDATE' | 'DELETE';
+  target_table: string;
+  parameters: ChangeRow;
+  affected_count: number;
+  before: ChangeRow[];
+  after: ChangeRow[];
+  expires_at: number;
+}
+
 export interface Answer {
   request_id: string;
   question: string;
@@ -21,6 +33,7 @@ export interface Answer {
   retrieval_mode: string;
   latency_ms: number;
   truncated: boolean;
+  change?: ChangePreview | null;
 }
 
 export interface Health {
@@ -34,8 +47,8 @@ export class Api {
   private http = inject(HttpClient);
   health() { return firstValueFrom(this.http.get<Health>('/api/health')); }
   schema() { return firstValueFrom(this.http.get<Table[]>('/api/schema')); }
-  ask(question: string, review: boolean) {
-    return firstValueFrom(this.http.post<Answer>('/api/query', { question, review }));
+  ask(question: string, review: boolean, intent: 'read' | 'change' = 'read') {
+    return firstValueFrom(this.http.post<Answer>('/api/query', { question, review, intent }));
   }
   decide(request_id: string, decision: 'approve' | 'cancel') {
     return firstValueFrom(this.http.post<Answer>('/api/approve', { request_id, decision }));

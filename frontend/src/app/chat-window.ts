@@ -1,4 +1,5 @@
 import { Component, ElementRef, inject, signal, viewChild } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Api, Answer } from './api';
 import { ApprovalModal } from './approval-modal';
 import { ResultsTable } from './results-table';
@@ -13,6 +14,7 @@ export class ChatWindow {
   inputBox = viewChild.required<ElementRef<HTMLTextAreaElement>>('questionBox');
   text = signal('');
   review = signal(false);
+  intent = signal<'read' | 'change'>('read');
   busy = signal(false);
   error = signal('');
   answers = signal<Answer[]>([]);
@@ -24,6 +26,7 @@ export class ChatWindow {
   ];
 
   choose(question: string) {
+    this.intent.set('read');
     this.text.set(question);
     this.inputBox().nativeElement.focus();
   }
@@ -35,7 +38,7 @@ export class ChatWindow {
     this.error.set('');
     this.busy.set(true);
     try {
-      const answer = await this.api.ask(question, this.review());
+      const answer = await this.api.ask(question, this.review(), this.intent());
       this.answers.update(items => [answer, ...items]);
       if (answer.status === 'pending') this.pending.set(answer);
       if (answer.status === 'completed') this.text.set('');
@@ -59,6 +62,8 @@ export class ChatWindow {
         this.pending.set(null);
         this.answers.update(items => items.map(item => item.request_id === pending.request_id
           ? { ...item, status: 'error', message: 'This review was already resolved. Submit a new question.' } : item));
+      } else if (e instanceof HttpErrorResponse && e.status === 503 && typeof e.error?.detail === 'string') {
+        this.error.set(e.error.detail);
       } else { this.error.set('The review service could not be reached. Retry your decision.'); }
     } finally { this.busy.set(false); }
   }

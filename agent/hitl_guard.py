@@ -23,7 +23,7 @@ class Blocked(ValueError):
 
 def read_query(path, sql, *, preview=False):
     if not re.match(r"^(select|with)\b", sql.strip(), re.I):
-        raise Blocked("This workspace is read-only. Only a single SELECT query can run.")
+        raise Blocked("Questions run on a read-only connection. Use Propose a change for a data edit.")
     if not path.is_file():
         raise ValueError("Load the Olist data first with python -m data.seed.")
     reads_comments = False

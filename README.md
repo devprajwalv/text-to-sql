@@ -1,6 +1,6 @@
 # Query Studio
 
-Ask a question about Olist’s Brazilian marketplace, read the generated SQLite query, and explore its results. The Angular workspace includes a searchable schema, a SQL review dialog, and paginated results. FastAPI handles retrieval, SQL generation, execution, and the local request log.
+Ask a question about Olist’s Brazilian marketplace, read the generated SQLite query, and explore its results. To edit the local product or seller catalog, describe a change in plain English, inspect the affected rows, and approve or cancel it in Angular.
 
 ## Run on Windows
 
@@ -93,6 +93,17 @@ npm.cmd --prefix frontend start
 
 Open the workspace, choose **Schema explorer**, and expand `fact_orders`. Return to **Query workspace**, select a suggested question, and click **Run query**. Select **Review SQL first** to inspect a statement before it runs. Queries that read customer review text automatically require review. Use **Approve query** or **Cancel** in the dialog. Each question has its own result in the current page’s history. [Workspace](http://localhost:4200) · [FastAPI interactive docs](http://127.0.0.1:8000/docs)
 
+## Preview a catalog change
+
+Choose **Propose a change** and enter *Add a new product with ID demo-book-01, category books, and 2 photos.* Click **Preview change**. The dialog shows the operation, target table, SQL, bound values, affected-row count, and proposed row. Choose **Cancel** to discard the proposal or **Approve change** to apply it to your local database. For an existing product, try *Change product demo-book-01's category to fiction* or *Delete product demo-book-01*. Updates show the before and after values side by side. Deletes show the rows to be removed.
+
+| Editable table | Primary key | Editable attributes |
+| --- | --- | --- |
+| `dim_products` | `product_id` | `category_name`, `photos_qty` |
+| `dim_sellers` | `seller_id` | `city`, `state`, `zip_prefix` |
+
+Start with an action such as *add*, *change*, or *remove* and name a product or seller. Each proposal contains **one statement affecting 1–10 rows** and expires after **10 minutes**. Inserts supply a unique key for each row. Updates and deletes require equality filters on allowed columns, optionally joined by `AND`. Primary keys stay fixed on updates. Foreign keys protect products and sellers referenced by orders. Reseeding refreshes the catalog from the CSVs and replaces local edits.
+
 ## Example questions and verified results
 
 These values come from the full public Olist dataset with all order statuses included. Merchandise revenue sums item prices and excludes freight. Money is stored as integer BRL cents and presented in reais.
@@ -107,7 +118,22 @@ The source contains 112,650 items. Purchases with multiple items count once in a
 
 ## Architecture and data model
 
-The browser calls relative `/api/**` URLs through Angular’s local proxy. FastAPI retrieves the three closest table descriptions from Chroma, includes the order fact table, adds the worked examples in `agent/few_shot_examples.yaml`, and uses LangChain’s OpenAI integration to generate one SQLite query.
+The browser calls relative `/api/**` URLs through Angular’s local proxy. Analytical questions use schema retrieval, worked examples, and a read-only connection. An explicit change request uses the target table's schema and a restricted SQL grammar. Both paths use the configured OpenAI model through LangChain.
+
+```mermaid
+flowchart TD
+    UI["Angular workspace"] -->|Ask a question| Read["Generate and validate SELECT"]
+    Read -->|Ordinary read| RO["Read-only SQLite connection"]
+    Read -->|Review required| Review["Review SQL"]
+    Review -->|Approve query| RO
+    UI -->|Propose a change| Plan["Parse DML and bind values"]
+    Plan --> Preview["Read current rows and store expiring preview"]
+    Preview --> Dialog["Angular change dialog"]
+    Dialog -->|Cancel| Cancel["Record cancellation"]
+    Dialog -->|Approve change| Check["Lock database and recheck preview"]
+    Check -->|Same rows and values| Commit["Commit business change and audit outcome together"]
+    Check -->|Expired or stale| Reject["Close proposal and require a fresh preview"]
+```
 
 | Table | Grain and join |
 | --- | --- |
@@ -118,16 +144,16 @@ The browser calls relative `/api/**` URLs through Angular’s local proxy. FastA
 | `dim_geography` | One mean coordinate pair per `zip_prefix`. Left join to customers or sellers to retain missing locations. |
 | `dim_reviews` | One source review row. An order can have multiple items and reviews. Aggregate both sides to order grain before joining on `order_id`. |
 
-The importer owns the write connection to `data/olist.db`. Generated queries use a separate SQLite connection with `mode=ro`, `query_only`, and an authorizer that restricts tables and functions. SQLite prepares a single statement before review. Execution has a three-second budget and returns up to 200 rows. The UI pages through ten rows at a time.
+Analytical queries use a SQLite connection with `mode=ro`, `query_only`, and an authorizer that restricts tables and functions. SQLite prepares a single statement before review. Read execution has a three-second budget and returns up to 200 rows. The UI pages through ten rows at a time.
 
 | Route | Purpose |
 | --- | --- |
 | `GET /api/health` | Backend liveness, local database presence, key presence, and index mode. Key presence is a configuration check. |
 | `GET /api/schema` | Table names, column descriptions, units, and join keys. |
-| `POST /api/query` | Accepts `{"question":"How many distinct orders were placed?","review":true}`. Returns SQL, ordered columns, row arrays, prompt tables, retrieval mode, latency, status, and request ID. |
+| `POST /api/query` | Defaults to `intent: "read"`. For a proposal, send `{"intent":"change","question":"Change product p1's category to books."}`. A pending write includes its request ID, SQL, and a `change` object containing parameters, operation, table, before/after rows, count, and expiry. |
 | `POST /api/approve` | Accepts a stored `request_id` and a `decision` of `approve` or `cancel`. Each pending request can be resolved once. |
 
-The local application log in `data/studio.db` stores the question, generated SQL, retrieval details, latency, and final outcome. Approval runs the SQL stored by the backend through the same read-only guard. Write operations receive a blocked outcome. A repeated decision receives HTTP 409.
+The local application log in `data/studio.db` stores the question, SQL, retrieval details, latency, and outcome. Its `write_proposal` table stores the bindings and preview under the same request ID. The browser sends only that ID and the decision. For a write approval, a dedicated SQLite connection opens `olist.db`, attaches `studio.db`, and takes a write lock with `BEGIN IMMEDIATE`. It checks expiry and the entire ordered preview again, executes the stored statement, verifies the affected count and resulting rows, and commits the audit outcome with the business change. Both files use SQLite rollback journals for atomic multi-file commits. A stale or expired proposal requires a fresh preview. Repeated decisions receive HTTP 409.
 
 ## Verification
 
@@ -141,7 +167,7 @@ npm.cmd --prefix frontend test -- --watch=false
 npm.cmd --prefix frontend run build
 ```
 
-The offline backend suite creates a synthetic three-order CSV fixture and tests repeat seeding, rollback, empty results, read limits, blocked writes, review decisions, and competing approvals. It builds and queries an actual persistent Chroma collection with deterministic embedding vectors. When `data/olist.db` exists, it also compares the three example questions to independent SQL against that local database. The full-data run used the official Kaggle download. A headless Edge run exercised schema exploration, generated SQL, approval, cancellation, and the order count through the development proxy using a generation double.
+The backend suite creates a synthetic three-order CSV fixture. All write tests use temporary business and log databases. They cover inserts, updates, deletes, cancellation, competing approvals, expiry, stale previews, row limits, and rollback when auditing fails. Read tests cover seeding, empty results, read limits, exceptional reads, and schema retrieval. Full-data comparisons open the local Olist database for reads only. A headless Edge run used a generation double and temporary SQLite files to verify the original value while the dialog was open, cancellation, a fresh approval, a subsequent SELECT, and HTTP 409 on replay.
 
 | Tested component | Version |
 | --- | --- |

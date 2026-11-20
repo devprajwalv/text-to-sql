@@ -4,7 +4,8 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent.sql_chain import ReviewConflict, ask, decide
+from agent.sql_chain import ask, decide
+from agent.write_execution import ReviewConflict, ReviewUnavailable
 
 router = APIRouter()
 
@@ -13,12 +14,23 @@ class Question(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     question: str = Field(min_length=1, max_length=2000)
     review: bool = False
+    intent: Literal["read", "change"] = "read"
 
 
 class Decision(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: UUID
     decision: Literal["approve", "cancel"]
+
+
+class ChangePreview(BaseModel):
+    operation: Literal["INSERT", "UPDATE", "DELETE"]
+    target_table: str
+    parameters: dict[str, str | int | None]
+    affected_count: int
+    before: list[dict[str, str | int | None]]
+    after: list[dict[str, str | int | None]]
+    expires_at: int
 
 
 class Answer(BaseModel):
@@ -33,11 +45,12 @@ class Answer(BaseModel):
     relevant_tables: list[str]
     retrieval_mode: str
     latency_ms: int
+    change: ChangePreview | None = None
 
 
 @router.post("/query", response_model=Answer)
 def query(body: Question):
-    return ask(body.question, body.review)
+    return ask(body.question, body.review, body.intent)
 
 
 @router.post("/approve", response_model=Answer)
@@ -46,3 +59,5 @@ def approve(body: Decision):
         return decide(str(body.request_id), body.decision == "approve")
     except ReviewConflict as exc:
         raise HTTPException(409, str(exc)) from exc
+    except ReviewUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc

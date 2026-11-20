@@ -69,3 +69,14 @@ query_log = Table(
     Column("retrieval_mode", String, nullable=False),
     Column("latency_ms", Integer, nullable=False),
 )
+
+# Additive table so existing logs and pending SELECT reviews remain readable.
+write_proposal = Table(
+    "write_proposal", application,
+    Column("request_id", ForeignKey("query_log.request_id"), primary_key=True),
+    Column("operation", String, nullable=False),
+    Column("target_table", String, nullable=False),
+    Column("parameters", JSON, nullable=False),
+    Column("snapshot", JSON, nullable=False),
+    Column("expires_at", Integer, nullable=False),
+)
